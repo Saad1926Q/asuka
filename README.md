@@ -1,14 +1,28 @@
-# asuka (アスカ) /ᐠ - ˕ -マ Ⳋ
+# Asuka
 
-the main idea in mind for this project is to make a minimal distributed async RL training system for language models — in an attempt to learn how some of the frontier RL libraries work and what primitives they use.
+Asuka is my attempt to build a small, educational version of **SLIME** in order to understand distributed RL training systems for language models.
 
-## the plan is to learn and read about how the following work:
+The goal is to learn SLIME’s architecture by rebuilding its core ideas in a minimal form:
 
-- **ray** - distributed orchestration, actors, queues, gpu scheduling
-- **nccl** - fast weight sync between trainer and inference servers
-- **grpo** - group-relative policy optimization, kl penalties, reward hacking
-- **vllm** - running inference servers programmatically, weight update api
-- **fsdp** - sharding models across gpus
-- **async patterns** - producer/consumer, backpressure, staleness handling
+```text
+Ray orchestration
+  → SGLang rollout workers
+  → Asuka data buffer / trajectory pipeline
+  → Megatron-based RL trainer
+  → weight synchronization back to rollout workers
+```
+
+It is a learning project focused on understanding:
+
+- how SLIME structures distributed RL training;
+- how Ray actors and placement groups coordinate training/rollout workers;
+- how SGLang is used for high-throughput rollout generation;
+- how Megatron handles distributed and MoE model training;
+- how rollout data becomes RL training data;
+- how rewards, masks, logprobs, and model versions flow through the system;
+- how weights are synchronized between trainer and rollout engines;
+- how async rollout/training and staleness work.
+
+FSDP, veRL, vLLM, and other systems are mostly studied as comparison points: useful for understanding alternative designs.
 
 > the name is a reference to **Tanaka Asuka** from _Hibike! Euphonium_ - not the one from Evangelion
