@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from asuka.contracts import Sample, TrainData
+from asuka.rewards import normalize_group_rewards
 
 
 def validate_sample_groups(groups: Sequence[Sequence[Sample]]) -> None:
@@ -47,11 +48,22 @@ def flatten_sample_groups(groups: Sequence[Sequence[Sample]]) -> list[Sample]:
     return [sample for group in groups for sample in group]
 
 
-def convert_samples_to_train_data(samples: Sequence[Sample]) -> TrainData:
+def convert_samples_to_train_data(
+    samples: Sequence[Sample],
+    *,
+    normalize_rewards: bool = False,
+    normalize_rewards_by_std: bool = False,
+) -> TrainData:
     """Convert validated rollout samples into trainer-facing columns."""
 
     if not samples:
         raise ValueError("cannot convert an empty sample list to TrainData")
+
+    processed_rewards = (
+        normalize_group_rewards(samples, normalize_by_std=normalize_rewards_by_std)
+        if normalize_rewards
+        else None
+    )
 
     tokens: list[list[int]] = []
     response_lengths: list[int] = []
@@ -69,6 +81,8 @@ def convert_samples_to_train_data(samples: Sequence[Sample]) -> TrainData:
     for index, sample in enumerate(samples):
         if sample.reward is None:
             raise ValueError(f"sample {index} is missing reward")
+
+        reward = processed_rewards[index] if processed_rewards is not None else sample.reward
 
         mask = sample.loss_mask if sample.loss_mask is not None else [1] * sample.response_length
         if len(mask) != sample.response_length:
@@ -98,7 +112,7 @@ def convert_samples_to_train_data(samples: Sequence[Sample]) -> TrainData:
 
         tokens.append(sample.tokens)
         response_lengths.append(sample.response_length)
-        rewards.append(sample.reward)
+        rewards.append(reward)
         raw_rewards.append(sample.raw_reward if sample.raw_reward is not None else sample.reward)
         loss_masks.append(mask)
         rollout_ids.append(sample.rollout_id if sample.rollout_id is not None else index)

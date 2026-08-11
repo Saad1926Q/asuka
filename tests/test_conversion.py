@@ -198,3 +198,51 @@ def test_convert_samples_to_train_data_assigns_missing_ids_deterministically() -
     assert train_data.rollout_ids == [0, 1]
     assert train_data.group_ids == [0, 1]
     assert train_data.sample_ids == [0, 1]
+
+
+def test_convert_samples_to_train_data_can_normalize_rewards_by_group() -> None:
+    samples = [
+        make_sample("5", reward=1.0, raw_reward=1.0, group_id=0),
+        make_sample("6", reward=0.0, raw_reward=0.0, group_id=0),
+        make_sample("7", reward=10.0, raw_reward=10.0, group_id=1),
+        make_sample("8", reward=6.0, raw_reward=6.0, group_id=1),
+    ]
+
+    train_data = convert_samples_to_train_data(samples, normalize_rewards=True)
+
+    assert train_data.rewards == [0.5, -0.5, 2.0, -2.0]
+    assert train_data.raw_rewards == [1.0, 0.0, 10.0, 6.0]
+
+
+def test_convert_samples_to_train_data_default_reward_behavior_is_unchanged() -> None:
+    samples = [
+        make_sample("5", reward=1.0, group_id=0),
+        make_sample("6", reward=0.0, group_id=0),
+    ]
+
+    train_data = convert_samples_to_train_data(samples)
+
+    assert train_data.rewards == [1.0, 0.0]
+    assert train_data.raw_rewards == [1.0, 0.0]
+
+
+def test_convert_samples_to_train_data_rejects_missing_group_id_when_normalizing() -> None:
+    sample = make_sample("5", reward=1.0, group_id=None)
+
+    with pytest.raises(ValueError, match="missing group_id"):
+        convert_samples_to_train_data([sample], normalize_rewards=True)
+
+
+def test_convert_samples_to_train_data_can_normalize_rewards_by_group_std() -> None:
+    samples = [
+        make_sample("5", reward=1.0, group_id=0),
+        make_sample("6", reward=0.0, group_id=0),
+    ]
+
+    train_data = convert_samples_to_train_data(
+        samples,
+        normalize_rewards=True,
+        normalize_rewards_by_std=True,
+    )
+
+    assert train_data.rewards == pytest.approx([0.999998, -0.999998])
