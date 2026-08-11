@@ -1,1 +1,1 @@
-"""Asuka: a miniature SLIME-style distributed RL learning project."""
+"""Asuka: a miniature distributed RL learning project."""

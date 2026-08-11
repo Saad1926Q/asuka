@@ -1,4 +1,4 @@
-"""Conversion helpers for rollout sample groups."""
+"""Validate grouped rollout output and assemble trainer-facing batches."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from asuka.data.rewards import normalize_group_rewards
 
 
 def validate_sample_groups(groups: Sequence[Sequence[Sample]]) -> None:
-    """Validate grouped rollout output before flattening."""
+    """Checks rollout groups are non-empty Samples with consistent rollout ids."""
 
     if not groups:
         raise ValueError("rollout output must contain at least one group")
@@ -42,7 +42,7 @@ def validate_sample_groups(groups: Sequence[Sequence[Sample]]) -> None:
 
 
 def flatten_sample_groups(groups: Sequence[Sequence[Sample]]) -> list[Sample]:
-    """Flatten grouped rollout samples while preserving order."""
+    """Converts list[list[Sample]] into list[Sample] after validation."""
 
     validate_sample_groups(groups)
     return [sample for group in groups for sample in group]
@@ -54,7 +54,7 @@ def convert_samples_to_train_data(
     normalize_rewards: bool = False,
     normalize_rewards_by_std: bool = False,
 ) -> TrainData:
-    """Convert validated rollout samples into trainer-facing columns."""
+    """Builds TrainData columns, filling masks/ids and optionally normalizing rewards."""
 
     if not samples:
         raise ValueError("cannot convert an empty sample list to TrainData")

@@ -1,4 +1,4 @@
-"""Reward processing for grouped rollout samples."""
+"""Reward transforms used before Samples become TrainData."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ def normalize_group_rewards(
     normalize_by_std: bool = False,
     eps: float = 1e-6,
 ) -> list[float]:
-    """Return group-relative rewards in the same order as samples."""
+    """Subtracts each group mean, optionally divides by group std, preserving order."""
 
     if not samples:
         raise ValueError("cannot normalize rewards for an empty sample list")
