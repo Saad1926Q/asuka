@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from asuka.contracts import Sample, TrainData
-from asuka.rewards import normalize_group_rewards
+from asuka.data.contracts import Sample, TrainData
+from asuka.data.rewards import normalize_group_rewards
 
 
 def validate_sample_groups(groups: Sequence[Sequence[Sample]]) -> None:

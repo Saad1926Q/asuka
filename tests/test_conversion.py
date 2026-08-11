@@ -2,8 +2,8 @@ from typing import Any
 
 import pytest
 
-from asuka.contracts import Sample
-from asuka.conversion import (
+from asuka.data.contracts import Sample
+from asuka.data.conversion import (
     convert_samples_to_train_data,
     flatten_sample_groups,
     validate_sample_groups,

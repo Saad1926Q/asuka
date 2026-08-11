@@ -1,6 +1,6 @@
 import pytest
 
-from asuka.contracts import Sample, SampleStatus, TrainData
+from asuka.data.contracts import Sample, SampleStatus, TrainData
 
 
 def test_sample_defaults_are_slime_like() -> None:

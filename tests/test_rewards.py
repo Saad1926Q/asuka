@@ -1,7 +1,7 @@
 import pytest
 
-from asuka.contracts import Sample
-from asuka.rewards import normalize_group_rewards
+from asuka.data.contracts import Sample
+from asuka.data.rewards import normalize_group_rewards
 
 
 def make_sample(reward: float | None, *, group_id: int | None) -> Sample:

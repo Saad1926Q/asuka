@@ -6,7 +6,7 @@ import math
 from collections import defaultdict
 from collections.abc import Sequence
 
-from asuka.contracts import Sample
+from asuka.data.contracts import Sample
 
 
 def normalize_group_rewards(
