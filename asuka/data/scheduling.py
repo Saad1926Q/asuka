@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from asuka.data.contracts import TrainData
+from asuka.data.packing import first_fit_pack
 
 
 @dataclass(slots=True)
@@ -71,18 +72,18 @@ def _make_static_microbatches(
 def build_dp_schedule(train_data: TrainData, config: DPScheduleConfig) -> DPSchedule:
     """Builds the rank/microbatch plan for one TrainData batch.
 
-    The schedule answers two questions: which samples go to which DP rank,
-    and how each rank splits its local samples into microbatches.
+    The schedule answers two questions: which samples go to each data-parallel
+    rank, and how each rank splits its local samples into microbatches.
 
-    Current implementation supports the static path:
-    use_dynamic_batch_size=False, balance_data=False, balance_by_flops=False.
-    Future paths will use the existing knobs for token-budget packing, rank
-    workload balancing, and FLOPs-aware balancing.
+    Static mode groups a fixed number of samples using ``micro_batch_size``.
+    Dynamic mode greedily packs samples by token length, placing each sample in
+    the first existing microbatch where it fits under ``max_tokens_per_rank``;
+    oversized samples are placed alone.
+
+    Rank workload balancing and FLOPs-aware balancing are not implemented yet.
     """
 
     _validate_config(config)
-    if config.use_dynamic_batch_size:
-        raise NotImplementedError("dynamic token batching is not implemented yet")
     if config.balance_data:
         raise NotImplementedError("rank balancing is not implemented yet")
     if config.balance_by_flops:
@@ -104,15 +105,34 @@ def build_dp_schedule(train_data: TrainData, config: DPScheduleConfig) -> DPSche
 
     for step_start in range(0, len(rollout_ids), config.global_batch_size):
         step_rollout_ids = rollout_ids[step_start : step_start + config.global_batch_size]
+
         step_sample_indices = [
             sample_index
             for rollout_id in step_rollout_ids
             for sample_index in rollout_id_to_samples[rollout_id]
         ]
-        step_microbatches = _make_static_microbatches(
-            step_sample_indices,
-            micro_batch_size=config.micro_batch_size,
-        )
+
+        if config.use_dynamic_batch_size:
+            if config.max_tokens_per_rank is None:
+                raise ValueError("max_tokens_per_rank is required for dynamic token batching")
+
+            lengths = [len(train_data.tokens[index]) for index in step_sample_indices]
+
+            local_microbatches = first_fit_pack(
+                lengths,
+                config.max_tokens_per_rank,
+            )
+
+            step_microbatches = [
+                [step_sample_indices[index] for index in microbatch]
+                for microbatch in local_microbatches
+            ]
+        else:
+            step_microbatches = _make_static_microbatches(
+                step_sample_indices,
+                micro_batch_size=config.micro_batch_size,
+            )
+
         if len(step_microbatches) % config.dp_size != 0:
             raise ValueError(
                 f"step has {len(step_microbatches)} microbatches, which is not "

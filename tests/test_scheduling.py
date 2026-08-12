@@ -192,19 +192,24 @@ def test_build_dp_schedule_rejects_invalid_config_values() -> None:
         )
 
 
-def test_build_dp_schedule_rejects_unsupported_knobs_for_now() -> None:
+def test_build_dp_schedule_requires_token_budget_for_dynamic_batching() -> None:
     train_data = make_train_data([0, 1])
 
-    with pytest.raises(NotImplementedError, match="dynamic token batching"):
+    with pytest.raises(ValueError, match="max_tokens_per_rank is required"):
         build_dp_schedule(
             train_data,
             DPScheduleConfig(
                 dp_size=1,
-                global_batch_size=1,
+                global_batch_size=2,
                 micro_batch_size=1,
                 use_dynamic_batch_size=True,
             ),
         )
+
+
+def test_build_dp_schedule_rejects_unsupported_knobs_for_now() -> None:
+    train_data = make_train_data([0, 1])
+
     with pytest.raises(NotImplementedError, match="rank balancing"):
         build_dp_schedule(
             train_data,
@@ -225,6 +230,45 @@ def test_build_dp_schedule_rejects_unsupported_knobs_for_now() -> None:
                 balance_by_flops=True,
             ),
         )
+
+
+def test_build_dp_schedule_dynamic_packs_by_token_budget() -> None:
+    train_data = make_train_data([0, 1, 2, 3])
+    train_data.tokens = [[1] * length for length in [3, 3, 2, 4]]
+
+    schedule = build_dp_schedule(
+        train_data,
+        DPScheduleConfig(
+            dp_size=2,
+            global_batch_size=4,
+            micro_batch_size=1,
+            use_dynamic_batch_size=True,
+            max_tokens_per_rank=6,
+        ),
+    )
+
+    assert schedule.partitions == [[0, 1], [2, 3]]
+    assert schedule.micro_batch_indices == [[[0, 1]], [[0, 1]]]
+    assert schedule.num_microbatches == [1]
+
+
+def test_build_dp_schedule_dynamic_places_oversized_sample_alone() -> None:
+    train_data = make_train_data([0, 1, 2])
+    train_data.tokens = [[1] * length for length in [8, 2, 2]]
+
+    schedule = build_dp_schedule(
+        train_data,
+        DPScheduleConfig(
+            dp_size=1,
+            global_batch_size=3,
+            micro_batch_size=1,
+            use_dynamic_batch_size=True,
+            max_tokens_per_rank=6,
+        ),
+    )
+
+    assert schedule.partitions == [[0, 1, 2]]
+    assert schedule.micro_batch_indices == [[[0], [1, 2]]]
 
 
 def test_build_dp_schedule_rejects_incomplete_global_batch() -> None:
