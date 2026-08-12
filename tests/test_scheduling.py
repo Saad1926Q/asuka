@@ -299,3 +299,26 @@ def test_build_dp_schedule_rejects_microbatch_count_not_divisible_by_dp_size() -
             train_data,
             DPScheduleConfig(dp_size=2, global_batch_size=3, micro_batch_size=1),
         )
+
+
+def test_build_dp_schedule_dynamic_splits_bins_for_dp_alignment() -> None:
+    train_data = make_train_data([0, 1, 2, 3, 4, 5])
+    train_data.tokens = [[1] * length for length in [3, 3, 2, 4, 5, 1]]
+
+    schedule = build_dp_schedule(
+        train_data,
+        DPScheduleConfig(
+            dp_size=2,
+            global_batch_size=6,
+            micro_batch_size=1,
+            use_dynamic_batch_size=True,
+            max_tokens_per_rank=6,
+        ),
+    )
+
+    assert schedule.num_microbatches == [2]
+    assert len(schedule.micro_batch_indices[0]) == 2
+    assert len(schedule.micro_batch_indices[1]) == 2
+    assert sorted(index for partition in schedule.partitions for index in partition) == list(
+        range(6)
+    )

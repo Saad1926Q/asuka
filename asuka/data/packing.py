@@ -31,3 +31,49 @@ def first_fit_pack(lengths: list[int], max_tokens_per_bin: int) -> list[list[int
             bin_sums.append(length)
 
     return bins
+
+
+def split_bin_by_tokens(
+    bin_indices: list[int],
+    lengths: list[int],
+) -> tuple[list[int], list[int]]:
+    """Splits one multi-sample bin into two approximately equal-token bins."""
+
+    if len(bin_indices) < 2:
+        raise ValueError("a bin must contain at least two samples to split")
+    if any(index < 0 or index >= len(lengths) for index in bin_indices):
+        raise ValueError("bin contains an out-of-range sample index")
+
+    halves: list[list[int]] = [[], []]
+    half_sums = [0, 0]
+    for index in sorted(bin_indices, key=lambda item: -lengths[item]):
+        half = 0 if half_sums[0] <= half_sums[1] else 1
+        halves[half].append(index)
+        half_sums[half] += lengths[index]
+
+    return halves[0], halves[1]
+
+
+def expand_bins_by_splitting(
+    bins: list[list[int]],
+    target_count: int,
+    lengths: list[int],
+) -> None:
+    """Splits the largest multi-sample bins until target_count is reached."""
+
+    if target_count < len(bins):
+        raise ValueError("target_count cannot be smaller than the current bin count")
+
+    while len(bins) < target_count:
+        candidates = [
+            (sum(lengths[index] for index in bin_indices), bin_index)
+            for bin_index, bin_indices in enumerate(bins)
+            if len(bin_indices) > 1
+        ]
+        if not candidates:
+            raise ValueError("cannot reach target_count: all bins contain one sample")
+
+        _, bin_index = max(candidates)
+        left, right = split_bin_by_tokens(bins[bin_index], lengths)
+        bins[bin_index] = left
+        bins.append(right)

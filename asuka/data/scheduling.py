@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from asuka.data.contracts import TrainData
-from asuka.data.packing import first_fit_pack
+from asuka.data.packing import expand_bins_by_splitting, first_fit_pack
 
 
 @dataclass(slots=True)
@@ -123,6 +123,15 @@ def build_dp_schedule(train_data: TrainData, config: DPScheduleConfig) -> DPSche
                 config.max_tokens_per_rank,
             )
 
+            target_count = (
+                (len(local_microbatches) + config.dp_size - 1) // config.dp_size
+            ) * config.dp_size
+            if target_count > len(local_microbatches):
+                expand_bins_by_splitting(
+                    local_microbatches,
+                    target_count,
+                    lengths,
+                )
             step_microbatches = [
                 [step_sample_indices[index] for index in microbatch]
                 for microbatch in local_microbatches
