@@ -302,10 +302,63 @@ def test_build_dp_schedule_rejects_incomplete_static_microbatch() -> None:
 def test_build_dp_schedule_rejects_microbatch_count_not_divisible_by_dp_size() -> None:
     train_data = make_train_data([0, 1, 2])
 
-    with pytest.raises(ValueError, match="not divisible by dp_size"):
+    with pytest.raises(ValueError, match="not divisible by alignment unit"):
         build_dp_schedule(
             train_data,
             DPScheduleConfig(dp_size=2, global_batch_size=3, micro_batch_size=1),
+        )
+
+
+def test_build_dp_schedule_rejects_invalid_vpp_settings() -> None:
+    train_data = make_train_data([0])
+
+    with pytest.raises(ValueError, match="vpp_size must be positive"):
+        build_dp_schedule(
+            train_data,
+            DPScheduleConfig(
+                dp_size=1,
+                global_batch_size=1,
+                micro_batch_size=1,
+                vpp_size=0,
+            ),
+        )
+
+
+def test_build_dp_schedule_dynamic_aligns_for_vpp() -> None:
+    train_data = make_train_data([0, 1, 2, 3])
+    train_data.tokens = [[1] * length for length in [3, 3, 3, 3]]
+
+    schedule = build_dp_schedule(
+        train_data,
+        DPScheduleConfig(
+            dp_size=2,
+            global_batch_size=4,
+            micro_batch_size=1,
+            use_dynamic_batch_size=True,
+            max_tokens_per_rank=3,
+            vpp_size=2,
+            microbatch_group_size_per_vp_stage=2,
+        ),
+    )
+
+    assert schedule.num_microbatches == [2]
+    assert len(schedule.micro_batch_indices[0]) == 2
+    assert len(schedule.micro_batch_indices[1]) == 2
+
+
+def test_build_dp_schedule_static_rejects_vpp_misalignment() -> None:
+    train_data = make_train_data([0, 1])
+
+    with pytest.raises(ValueError, match="not divisible by alignment unit"):
+        build_dp_schedule(
+            train_data,
+            DPScheduleConfig(
+                dp_size=2,
+                global_batch_size=2,
+                micro_batch_size=1,
+                vpp_size=2,
+                microbatch_group_size_per_vp_stage=2,
+            ),
         )
 
 

@@ -23,6 +23,8 @@ class DPScheduleConfig:
     max_tokens_per_rank: int | None = None
     balance_data: bool = False
     balance_by_flops: bool = False
+    vpp_size: int = 1
+    microbatch_group_size_per_vp_stage: int = 1
 
 
 @dataclass(slots=True)
@@ -48,6 +50,10 @@ def _validate_config(config: DPScheduleConfig) -> None:
         raise ValueError("global_batch_size must be positive")
     if config.micro_batch_size <= 0:
         raise ValueError("micro_batch_size must be positive")
+    if config.vpp_size <= 0:
+        raise ValueError("vpp_size must be positive")
+    if config.microbatch_group_size_per_vp_stage <= 0:
+        raise ValueError("microbatch_group_size_per_vp_stage must be positive")
 
 
 def _group_samples_by_rollout_id(rollout_ids: list[int]) -> dict[int, list[int]]:
@@ -112,6 +118,7 @@ def build_dp_schedule(train_data: TrainData, config: DPScheduleConfig) -> DPSche
 
     # Keep all samples from the same rollout together while forming steps.
     rollout_id_to_samples = _group_samples_by_rollout_id(train_data.rollout_ids)
+
     rollout_ids = list(rollout_id_to_samples)
 
     if len(rollout_ids) % config.global_batch_size != 0:
@@ -121,9 +128,18 @@ def build_dp_schedule(train_data: TrainData, config: DPScheduleConfig) -> DPSche
         )
 
     sample_lengths = [len(tokens) for tokens in train_data.tokens]
+
+    align_to = config.dp_size
+
+    if config.vpp_size > 1:
+        align_to *= config.microbatch_group_size_per_vp_stage
+
     partitions: list[list[int]] = [[] for _ in range(config.dp_size)]
+
     micro_batch_indices: list[list[list[int]]] = [[] for _ in range(config.dp_size)]
+
     num_microbatches: list[int] = []
+
     global_batch_sizes: list[int] = []
 
     # Build one independent schedule entry for each global training step.
@@ -151,9 +167,7 @@ def build_dp_schedule(train_data: TrainData, config: DPScheduleConfig) -> DPSche
 
             # Dynamic bins must be split if their count cannot divide evenly
             # across ranks; this keeps every rank on the same microbatch count.
-            target_count = (
-                (len(local_microbatches) + config.dp_size - 1) // config.dp_size
-            ) * config.dp_size
+            target_count = ((len(local_microbatches) + align_to - 1) // align_to) * align_to
             if target_count > len(local_microbatches):
                 expand_bins_by_splitting(
                     local_microbatches,
@@ -172,10 +186,10 @@ def build_dp_schedule(train_data: TrainData, config: DPScheduleConfig) -> DPSche
 
         # Both assignment strategies require an equal number of microbatches
         # per rank for synchronized distributed training.
-        if len(step_microbatches) % config.dp_size != 0:
+        if len(step_microbatches) % align_to != 0:
             raise ValueError(
                 f"step has {len(step_microbatches)} microbatches, which is not "
-                f"divisible by dp_size ({config.dp_size})"
+                f"divisible by alignment unit ({align_to})"
             )
 
         num_microbatches.append(len(step_microbatches) // config.dp_size)
