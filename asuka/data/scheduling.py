@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from asuka.data.contracts import TrainData
-from asuka.data.packing import expand_bins_by_splitting, first_fit_pack
+from asuka.data.packing import (
+    balance_microbatches,
+    expand_bins_by_splitting,
+    first_fit_pack,
+)
 
 
 @dataclass(slots=True)
@@ -32,7 +36,11 @@ class DPSchedule:
 
 
 def _validate_config(config: DPScheduleConfig) -> None:
-    """Rejects impossible schedule sizes before building rank assignments."""
+    """Rejects impossible schedule sizes before building rank assignments.
+
+    Args:
+        config: Scheduling options including DP size and batch-size settings.
+    """
 
     if config.dp_size <= 0:
         raise ValueError("dp_size must be positive")
@@ -43,7 +51,11 @@ def _validate_config(config: DPScheduleConfig) -> None:
 
 
 def _group_samples_by_rollout_id(rollout_ids: list[int]) -> dict[int, list[int]]:
-    """Collects sample positions for each rollout id while preserving order."""
+    """Collects sample positions for each rollout id while preserving order.
+
+    Args:
+        rollout_ids: Rollout ID for each sample position.
+    """
 
     grouped: dict[int, list[int]] = {}
     for sample_index, rollout_id in enumerate(rollout_ids):
@@ -56,7 +68,12 @@ def _make_static_microbatches(
     *,
     micro_batch_size: int,
 ) -> list[list[int]]:
-    """Splits one training step into fixed-size sample-count microbatches."""
+    """Splits one training step into fixed-size sample-count microbatches.
+
+    Args:
+        sample_indices: Global sample IDs belonging to one training step.
+        micro_batch_size: Number of samples required in each microbatch.
+    """
 
     if len(sample_indices) % micro_batch_size != 0:
         raise ValueError(
@@ -72,6 +89,10 @@ def _make_static_microbatches(
 def build_dp_schedule(train_data: TrainData, config: DPScheduleConfig) -> DPSchedule:
     """Builds the rank/microbatch plan for one TrainData batch.
 
+    Args:
+        train_data: Samples and token sequences to distribute.
+        config: Batch, DP, packing, and balancing options.
+
     The schedule answers two questions: which samples go to each data-parallel
     rank, and how each rank splits its local samples into microbatches.
 
@@ -80,15 +101,16 @@ def build_dp_schedule(train_data: TrainData, config: DPScheduleConfig) -> DPSche
     the first existing microbatch where it fits under ``max_tokens_per_rank``;
     oversized samples are placed alone.
 
-    Rank workload balancing and FLOPs-aware balancing are not implemented yet.
+    With ``balance_data=True``, complete microbatches are assigned using a
+    workload-balancing partitioner. FLOPs-aware balancing is not implemented
+    yet.
     """
 
     _validate_config(config)
-    if config.balance_data:
-        raise NotImplementedError("rank balancing is not implemented yet")
     if config.balance_by_flops:
         raise NotImplementedError("FLOPs balancing is not implemented yet")
 
+    # Keep all samples from the same rollout together while forming steps.
     rollout_id_to_samples = _group_samples_by_rollout_id(train_data.rollout_ids)
     rollout_ids = list(rollout_id_to_samples)
 
@@ -98,20 +120,24 @@ def build_dp_schedule(train_data: TrainData, config: DPScheduleConfig) -> DPSche
             f"global_batch_size ({config.global_batch_size})"
         )
 
+    sample_lengths = [len(tokens) for tokens in train_data.tokens]
     partitions: list[list[int]] = [[] for _ in range(config.dp_size)]
     micro_batch_indices: list[list[list[int]]] = [[] for _ in range(config.dp_size)]
     num_microbatches: list[int] = []
     global_batch_sizes: list[int] = []
 
+    # Build one independent schedule entry for each global training step.
     for step_start in range(0, len(rollout_ids), config.global_batch_size):
         step_rollout_ids = rollout_ids[step_start : step_start + config.global_batch_size]
 
+        # Expand rollout IDs into the sample IDs that belong to this step.
         step_sample_indices = [
             sample_index
             for rollout_id in step_rollout_ids
             for sample_index in rollout_id_to_samples[rollout_id]
         ]
 
+        # First decide the contents of each microbatch.
         if config.use_dynamic_batch_size:
             if config.max_tokens_per_rank is None:
                 raise ValueError("max_tokens_per_rank is required for dynamic token batching")
@@ -123,6 +149,8 @@ def build_dp_schedule(train_data: TrainData, config: DPScheduleConfig) -> DPSche
                 config.max_tokens_per_rank,
             )
 
+            # Dynamic bins must be split if their count cannot divide evenly
+            # across ranks; this keeps every rank on the same microbatch count.
             target_count = (
                 (len(local_microbatches) + config.dp_size - 1) // config.dp_size
             ) * config.dp_size
@@ -142,6 +170,8 @@ def build_dp_schedule(train_data: TrainData, config: DPScheduleConfig) -> DPSche
                 micro_batch_size=config.micro_batch_size,
             )
 
+        # Both assignment strategies require an equal number of microbatches
+        # per rank for synchronized distributed training.
         if len(step_microbatches) % config.dp_size != 0:
             raise ValueError(
                 f"step has {len(step_microbatches)} microbatches, which is not "
@@ -151,8 +181,28 @@ def build_dp_schedule(train_data: TrainData, config: DPScheduleConfig) -> DPSche
         num_microbatches.append(len(step_microbatches) // config.dp_size)
         global_batch_sizes.append(config.global_batch_size)
 
-        for rank in range(config.dp_size):
-            for microbatch_index in range(rank, len(step_microbatches), config.dp_size):
+        # Decide which complete microbatches each rank will process.
+        if config.balance_data:
+            # Balance total token workload instead of assigning microbatches by
+            # position; the returned IDs refer to step_microbatches.
+            rank_microbatch_indices = balance_microbatches(
+                step_microbatches,
+                sample_lengths,
+                config.dp_size,
+            )
+        else:
+            # Strided assignment: rank r receives microbatches r, r+dp_size,
+            # r+2*dp_size, and so on.
+            rank_microbatch_indices = [
+                list(range(rank, len(step_microbatches), config.dp_size))
+                for rank in range(config.dp_size)
+            ]
+
+        # Flatten each rank's assigned microbatches into its local partition.
+        # The schedule stores local offsets because the trainer sees each rank's
+        # partition as a separate compact batch.
+        for rank, rank_microbatches in enumerate(rank_microbatch_indices):
+            for microbatch_index in rank_microbatches:
                 microbatch = step_microbatches[microbatch_index]
                 local_start = len(partitions[rank])
                 partitions[rank].extend(microbatch)
@@ -171,7 +221,13 @@ def build_dp_schedule(train_data: TrainData, config: DPScheduleConfig) -> DPSche
 
 
 def validate_dp_schedule(schedule: DPSchedule, *, batch_size: int, dp_size: int) -> None:
-    """Checks rank counts, sample ownership, and local microbatch coverage."""
+    """Checks rank counts, sample ownership, and local microbatch coverage.
+
+    Args:
+        schedule: Candidate schedule to validate.
+        batch_size: Number of samples that must be covered exactly once.
+        dp_size: Expected number of data-parallel partitions.
+    """
 
     if batch_size < 0:
         raise ValueError("batch_size must be non-negative")

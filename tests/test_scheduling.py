@@ -207,19 +207,9 @@ def test_build_dp_schedule_requires_token_budget_for_dynamic_batching() -> None:
         )
 
 
-def test_build_dp_schedule_rejects_unsupported_knobs_for_now() -> None:
-    train_data = make_train_data([0, 1])
+def test_build_dp_schedule_rejects_unsupported_flops_balancing() -> None:
+    train_data = make_train_data([0])
 
-    with pytest.raises(NotImplementedError, match="rank balancing"):
-        build_dp_schedule(
-            train_data,
-            DPScheduleConfig(
-                dp_size=1,
-                global_batch_size=1,
-                micro_batch_size=1,
-                balance_data=True,
-            ),
-        )
     with pytest.raises(NotImplementedError, match="FLOPs balancing"):
         build_dp_schedule(
             train_data,
@@ -230,6 +220,24 @@ def test_build_dp_schedule_rejects_unsupported_knobs_for_now() -> None:
                 balance_by_flops=True,
             ),
         )
+
+
+def test_build_dp_schedule_balances_microbatch_workloads() -> None:
+    train_data = make_train_data([0, 1, 2, 3])
+    train_data.tokens = [[1] * length for length in [100, 90, 20, 10]]
+
+    schedule = build_dp_schedule(
+        train_data,
+        DPScheduleConfig(
+            dp_size=2,
+            global_batch_size=4,
+            micro_batch_size=1,
+            balance_data=True,
+        ),
+    )
+
+    assert schedule.partitions == [[1, 2], [0, 3]]
+    assert schedule.micro_batch_indices == [[[0], [1]], [[0], [1]]]
 
 
 def test_build_dp_schedule_dynamic_packs_by_token_budget() -> None:
