@@ -69,37 +69,47 @@ def test_validate_sample_groups_rejects_non_sample_items() -> None:
         validate_sample_groups(bad_groups)
 
 
-def test_validate_sample_groups_accepts_multi_step_chunks_with_same_rollout_id() -> None:
+def test_validate_sample_groups_accepts_alternatives_with_distinct_rollout_ids() -> None:
     validate_sample_groups(
         [
             [
-                make_sample("step 1", rollout_id=10, sample_id=0),
-                make_sample("step 2", rollout_id=10, sample_id=1),
+                make_sample("5", group_id=3, rollout_id=10, sample_id=0),
+                make_sample("The answer is 5", group_id=3, rollout_id=11, sample_id=1),
             ]
         ]
     )
 
 
-def test_validate_sample_groups_rejects_missing_rollout_id_inside_multi_step_group() -> None:
-    with pytest.raises(ValueError, match="mixes set and missing rollout_id"):
+def test_validate_sample_groups_rejects_missing_group_id_inside_prompt_group() -> None:
+    with pytest.raises(ValueError, match="mixes set and missing group_id"):
         validate_sample_groups(
             [
                 [
-                    make_sample("step 1", rollout_id=10, sample_id=0),
-                    make_sample("step 2", rollout_id=None, sample_id=1),
+                    make_sample("5", group_id=3, rollout_id=10, sample_id=0),
+                    make_sample("The answer is 5", group_id=None, rollout_id=11, sample_id=1),
                 ]
             ]
         )
 
 
-def test_validate_sample_groups_rejects_mismatched_rollout_ids_inside_group() -> None:
-    with pytest.raises(ValueError, match="multiple rollout_id values"):
+def test_validate_sample_groups_rejects_mismatched_group_ids_inside_group() -> None:
+    with pytest.raises(ValueError, match="multiple group_id values"):
         validate_sample_groups(
             [
                 [
-                    make_sample("step 1", rollout_id=10, sample_id=0),
-                    make_sample("step 2", rollout_id=11, sample_id=1),
+                    make_sample("5", group_id=3, rollout_id=10, sample_id=0),
+                    make_sample("The answer is 5", group_id=4, rollout_id=11, sample_id=1),
                 ]
+            ]
+        )
+
+
+def test_validate_sample_groups_rejects_duplicate_sample_ids() -> None:
+    with pytest.raises(ValueError, match="sample_id 0 appears more than once"):
+        validate_sample_groups(
+            [
+                [make_sample("5", group_id=3, rollout_id=10, sample_id=0)],
+                [make_sample("6", group_id=4, rollout_id=11, sample_id=0)],
             ]
         )
 

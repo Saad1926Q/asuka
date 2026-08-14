@@ -10,11 +10,12 @@ from asuka.data.rewards import normalize_group_rewards
 
 
 def validate_sample_groups(groups: Sequence[Sequence[Sample]]) -> None:
-    """Checks rollout groups are non-empty Samples with consistent rollout ids."""
+    """Checks prompt groups are non-empty and contain consistently grouped Samples."""
 
     if not groups:
         raise ValueError("rollout output must contain at least one group")
 
+    seen_sample_ids: set[int] = set()
     for group_index, group in enumerate(groups):
         if not group:
             raise ValueError(f"rollout group {group_index} is empty")
@@ -25,19 +26,22 @@ def validate_sample_groups(groups: Sequence[Sequence[Sample]]) -> None:
                     f"rollout group {group_index} item {sample_index} must be Sample, "
                     f"got {type(sample).__name__}"
                 )
+            if sample.sample_id is not None:
+                if sample.sample_id in seen_sample_ids:
+                    raise ValueError(f"sample_id {sample.sample_id} appears more than once")
+                seen_sample_ids.add(sample.sample_id)
 
-        rollout_ids = [sample.rollout_id for sample in group]
-        has_any_rollout_id = any(rollout_id is not None for rollout_id in rollout_ids)
-        if has_any_rollout_id and any(rollout_id is None for rollout_id in rollout_ids):
+        group_ids = [sample.group_id for sample in group]
+        has_any_group_id = any(group_id is not None for group_id in group_ids)
+        if has_any_group_id and any(group_id is None for group_id in group_ids):
             raise ValueError(
-                f"rollout group {group_index} mixes set and missing rollout_id values: "
-                f"{rollout_ids}"
+                f"rollout group {group_index} mixes set and missing group_id values: {group_ids}"
             )
 
-        set_rollout_ids = {rollout_id for rollout_id in rollout_ids if rollout_id is not None}
-        if len(set_rollout_ids) > 1:
+        set_group_ids = {group_id for group_id in group_ids if group_id is not None}
+        if len(set_group_ids) > 1:
             raise ValueError(
-                f"rollout group {group_index} has multiple rollout_id values: {rollout_ids}"
+                f"rollout group {group_index} has multiple group_id values: {group_ids}"
             )
 
 
