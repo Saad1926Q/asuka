@@ -119,6 +119,7 @@ class SGLangClient:
         top_p: float = 1.0,
         top_k: int = -1,
         stop: list[str] | None = None,
+        **extra_sampling_params: Any,
     ) -> GenerationResult:
         """Generates one response and returns its tokens and log-probabilities.
 
@@ -129,9 +130,11 @@ class SGLangClient:
             top_p: Nucleus sampling probability.
             top_k: Top-k sampling limit; ``-1`` disables the limit.
             stop: Optional strings that terminate generation.
+            extra_sampling_params: Additional SGLang sampling parameters.
         """
 
         sampling_params: dict[str, Any] = {
+            **extra_sampling_params,
             "max_new_tokens": max_new_tokens,
             "temperature": temperature,
             "top_p": top_p,

@@ -18,7 +18,13 @@ class GenerationClient(Protocol):
     async def generate(
         self,
         prompt_tokens: list[int],
-        **generation_kwargs: Any,
+        *,
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        top_p: float = 1.0,
+        top_k: int = -1,
+        stop: list[str] | None = None,
+        **extra_sampling_params: Any,
     ) -> GenerationResult:
         """Generates one response for the supplied prompt tokens."""
 
