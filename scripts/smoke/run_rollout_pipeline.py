@@ -90,6 +90,7 @@ async def run() -> None:
         "num_prompts": len(prompts),
         "samples_per_prompt": SAMPLES_PER_PROMPT,
         "num_samples": prepared.train_data.batch_size,
+        "raw_rewards": prepared.train_data.raw_rewards,
         "rewards": prepared.train_data.rewards,
         "responses": [sample.response for sample in prepared.samples],
         "partitions": prepared.schedule.partitions,
