@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Mapping
 from typing import Any
 
 from asuka.data.contracts import Sample
@@ -38,11 +39,14 @@ def exact_match_reward(sample: Sample) -> float:
 def tokenize_prompt(tokenizer: Any, prompt: str) -> list[int]:
     """Applies LFM2.5's chat template and returns prompt token IDs."""
 
-    tokens = tokenizer.apply_chat_template(
+    encoded = tokenizer.apply_chat_template(
         [{"role": "user", "content": prompt}],
         add_generation_prompt=True,
         tokenize=True,
     )
+    tokens = encoded["input_ids"] if isinstance(encoded, Mapping) else encoded
+    if tokens and isinstance(tokens[0], list):
+        tokens = tokens[0]
     return [int(token) for token in tokens]
 
 
